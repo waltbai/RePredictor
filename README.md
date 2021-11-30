@@ -13,17 +13,17 @@ pip install .
 ## Preprocess
 
 ```bash 
-python scripts/preprocess.py --data_dir /path/to/data --work_dir /path/to/workspace
+python scripts/preprocess.py
 ```
 
 ## Train
 
 ```bash 
-python scripts/train.py --data_dir /path/to/data --work_dir /path/to/workspace
+python scripts/train.py
 ```
 
 ## Test
 
 ```bash 
-python scripts/test.py --data_dir /path/to/data --work_dir /path/to/workspace
+python scripts/test.py
 ```
