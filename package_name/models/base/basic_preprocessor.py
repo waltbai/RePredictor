@@ -1,7 +1,9 @@
 """Basic preprocessor."""
 
-from abc import ABC, abstractmethod
 import os
+from abc import ABC, abstractmethod
+
+__all__ = ["BasicPreprocessor"]
 
 
 class BasicPreprocessor(ABC):
@@ -48,9 +50,21 @@ class BasicPreprocessor(ABC):
 
     @classmethod
     @abstractmethod
-    def from_checkpoint(cls, checkpoint_dir: str):
+    def load(cls, load_dir: str):
         """Load preprocessor from the checkpoint.
 
         Args:
-            checkpoint_dir (str): directory of the checkpoint.
+            load_dir (str): directory to load.
+        """
+    
+    @abstractmethod
+    def save(self, save_dir: str):
+        """Save checkpoint.
+
+        Notice: this method will NOT save config file, since the model
+        should save it. If preprocessor contains files like word dictionary,
+        save it.
+
+        Args:
+            save_dir (str): checkpoint name.
         """

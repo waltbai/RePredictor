@@ -5,15 +5,16 @@ from abc import ABC, abstractmethod
 
 import torch
 from package_name.models.base.basic_dataset import BasicDataset
-
 from package_name.utils.config import load_config, save_config
+
+__all__ =["BasicPredictor"]
 
 
 class BasicPredictor(ABC):
     """Basic predictor class.
 
-    Notice: In the ``__init__`` method of subclasses,
-    ``super`` method should be called IN THE LAST.
+    Notice: In the :meth:`__init__` method of subclasses,
+    :meth:`super` method should be called IN THE LAST.
     """
 
     def __init__(self,
@@ -171,7 +172,7 @@ class BasicPredictor(ABC):
         """
         config_path = os.path.join(checkpoint_dir, "config.yml")
         config = load_config(config_path)
-        predictor = BasicPredictor(config, device)
+        predictor = cls(config, device)
         if verbose:
             predictor._logger.info(
                 f"Loading checkpoint from {checkpoint_dir}.")
@@ -184,7 +185,7 @@ class BasicPredictor(ABC):
     def save_checkpoint(self,
                         checkpoint: str,
                         verbose: bool = True) -> None:
-        """Save a checkpoint.
+        """Save checkpoint.
 
         Args:
             checkpoint (str): unique name to specify a checkpoint.
