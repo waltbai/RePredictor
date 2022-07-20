@@ -1,16 +1,29 @@
-"""Load configurations."""
+"""Configurations."""
 
 import yaml
 
 
 def load_config(config_path="config/default.yml"):
-    """Get config file."""
+    """Load configuration from file.
+
+    Args:
+        config_path (str, optional): config file path.
+            Defaults to "config/default.yml".
+
+    Returns:
+        dict: configuration object
+    """
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.load(f, Loader=yaml.Loader)
     return config
 
 
 def save_config(config, config_path):
-    """Save config file."""
+    """Save configuration to file.
+
+    Args:
+        config (dict): configuration file.
+        config_path (str): configuration file path.
+    """
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(config, f, Dumper=yaml.Dumper)

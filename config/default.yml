@@ -5,4 +5,5 @@ progress_bar: True
 
 # Model settings
 model:
+  type: default
   name: default

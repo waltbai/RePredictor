@@ -133,3 +133,6 @@ dmypy.json
 
 # Temporary files
 temp/ 
+
+# VS code
+.vscode/
