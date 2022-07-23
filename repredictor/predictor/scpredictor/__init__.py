@@ -1,0 +1,1 @@
+from repredictor.predictor.scpredictor.predictor import SCPredictor as Predictor

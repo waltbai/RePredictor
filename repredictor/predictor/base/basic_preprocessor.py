@@ -614,4 +614,3 @@ class BasicPreprocessor(ABC):
                 question_idx_path=train_idx_path,
                 overwrite=overwrite)
         self.dataset_statistics()
-

@@ -66,6 +66,8 @@ class BasicPredictor(ABC):
         self._optimizer = None
         # The logger
         self._logger = None
+        # The preprocessor
+        self._preprocessor = None
         # Build model
         self.build_model()
 
@@ -329,3 +331,7 @@ class BasicPredictor(ABC):
         if self._optimizer is not None:
             self._optimizer = self._optimizer.to(device)
         return self
+
+    def preprocess(self):
+        """Preprocess."""
+        self._preprocessor.preprocess()
