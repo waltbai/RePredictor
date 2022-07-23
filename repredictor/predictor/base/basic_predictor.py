@@ -52,9 +52,13 @@ class BasicPredictor(ABC):
         self._lr = config["model"]["lr"]
         self._weight_decay = config["model"]["weight_decay"]
         self._npoch = config["model"]["npoch"]
+        self._interval = config["model"]["interval"]
         self._batch_size = config["model"]["batch_size"]
+        self._vocab_size = config["model"]["vocab_size"]
+        self._seq_len = config["model"]["seq_len"]
         self._embedding_dim = config["model"]["embedding_dim"]
         self._event_dim = config["model"]["event_dim"]
+        self._dropout = config["model"]["dropout"]
         # ===== Specified by each predictor =====
         # The neural model
         self._model = None
@@ -76,6 +80,8 @@ class BasicPredictor(ABC):
     def train(self,
               train_set: BasicDataset = None,
               train_fp: str = None,
+              dev_set: BasicDataset = None,
+              dev_fp: str = None,
               verbose: bool = True) -> None:
         """Train the model on train set.
 
@@ -88,6 +94,10 @@ class BasicPredictor(ABC):
                 In many cases, train set is too large to fully load into memory.
                 Then, this argument should be a directory.
                 Only used when train_set is None.
+                Defaults to None.
+            dev_set (BasicDataset, optional): dev set.
+                Defaults to None.
+            dev_fp (str, optional): dev file path.
                 Defaults to None.
             verbose (bool): whether to print training details in logger.
                 Defaults to True.
@@ -150,8 +160,8 @@ class BasicPredictor(ABC):
             Any: results.
         """
 
-    @abstractmethod
-    def evaluate(self, pred_label, true_label) -> dict or float:
+    @staticmethod
+    def evaluate(pred_label, true_label) -> float:
         """Evaluate the prediction results.
 
         Args:
@@ -159,8 +169,12 @@ class BasicPredictor(ABC):
             true_label: true labels
 
         Returns:
-            float or dict: performance under evaluation metric.
+            float: performance under evaluation metric.
         """
+        tot = len(true_label)
+        hit = pred_label.eq(true_label).sum().item()
+        accuracy = hit / tot
+        return accuracy
 
     @classmethod
     def from_checkpoint(cls,
