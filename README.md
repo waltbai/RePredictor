@@ -14,7 +14,7 @@ pip install .
 
 Methods must override:
 ```python
-from package_name.models import BasicPredictor
+from package_name.predictors import BasicPredictor
 
 class MyPredictor(BasicPredictor):
     def __init__(self, config, device="cpu"):
@@ -62,7 +62,7 @@ class MyPredictor(BasicPredictor):
 If you need another abstract class:
 ```python
 from abc import ABC, abstractmethod
-from package_name.models import BasicPredictor
+from package_name.predictors import BasicPredictor
 
 class MyAbstractPredictor(BasicPredictor):
     def __init__(self, config, device="cpu"):
@@ -79,7 +79,7 @@ class MyAbstractPredictor(BasicPredictor):
 
 Methods must override:
 ```python
-from package_name.models import BasicDataset
+from package_name.data import BasicDataset
 
 class MyDataset(BasicDataset):
     def __init__(self, data, train=False):
@@ -98,7 +98,7 @@ In most cases, you can use torch `DataLoader`. However, in some special cases,
 such as using graph as input, you may construct batches by yourself. Then you
 can inherit `BasicDataLoader` to design your own dataloader:
 ```python
-from package_name.models import BasicDataLoader
+from package_name.data import BasicDataLoader
 
 class MyDataLoader(BasicDataLoader):
     def __init__(self,
@@ -111,6 +111,14 @@ class MyDataLoader(BasicDataLoader):
         # Implement your batch construction strategies here.
         pass
 ```
+
+## Config
+If you want to use scientific counting method, please use ``1.0e-5`` instead of ``1e-5``,
+otherwise yaml reader will recognize it as a string.
+
+## Network
+Network structure can be implemented under ``network`` module.
+It is recommended to split files according to different components.
 
 ## Preprocess
 

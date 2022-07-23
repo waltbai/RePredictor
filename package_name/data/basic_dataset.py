@@ -90,7 +90,7 @@ class BasicDataLoader(ABC):
         self._dataset = dataset
         self._batch_size = batch_size
         self._shuffle = shuffle
-    
+
     def __iter__(self):
         """Iterate batches."""
         num_samples = len(self._dataset)

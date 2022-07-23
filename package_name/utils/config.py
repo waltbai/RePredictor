@@ -2,6 +2,8 @@
 
 import yaml
 
+__all__ = ["load_config", "save_config"]
+
 
 def load_config(config_path="config/default.yml"):
     """Load configuration from file.

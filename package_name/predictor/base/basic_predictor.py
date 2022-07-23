@@ -4,7 +4,8 @@ import os
 from abc import ABC, abstractmethod
 
 import torch
-from package_name.models.base.basic_dataset import BasicDataset
+
+from package_name.data import BasicDataset
 from package_name.utils.config import load_config, save_config
 
 __all__ =["BasicPredictor"]
