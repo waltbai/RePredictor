@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 
 import torch
 
-from package_name.data import BasicDataset
-from package_name.utils.config import load_config, save_config
+from repredictor.data import BasicDataset
+from repredictor.utils.config import load_config, save_config
 
 __all__ =["BasicPredictor"]
 
@@ -29,6 +29,7 @@ class BasicPredictor(ABC):
                 Defaults to "cpu".
         """
         self._config = config
+        # ===== Common settings =====
         # Source data directory
         self._data_dir = config["data_dir"]
         # Work directory
@@ -40,13 +41,20 @@ class BasicPredictor(ABC):
         # Model name which should be globally unique
         self._model_name = config["model"]["name"]
         # Set model directory for checkpoints
-        if "model_dir" in config:
-            base_model_dir = config["model_dir"]
+        if "directory" in config["model"]:
+            base_model_dir = config["model"]["directory"]
         else:
             base_model_dir = os.path.join(self._work_dir, "models")
         self._model_dir = os.path.join(base_model_dir, self._model_name)
         # Set device for the model
         self._device = device
+        # ===== Common hyper-parameters =====
+        self._lr = config["model"]["lr"]
+        self._weight_decay = config["model"]["weight_decay"]
+        self._npoch = config["model"]["npoch"]
+        self._batch_size = config["model"]["batch_size"]
+        self._embedding_dim = config["model"]["embedding_dim"]
+        self._event_dim = config["model"]["event_dim"]
         # ===== Specified by each predictor =====
         # The neural model
         self._model = None

@@ -1,4 +1,4 @@
-"""Setup for package_name."""
+"""Setup for repredictor."""
 
 from setuptools import setup, find_packages
 
@@ -10,11 +10,11 @@ def _process_requirements():
 
 
 setup(
-    name="package_name",
+    name="repredictor",
     version="0.1",
     author="Long Bai",
     author_email="bailong18b@ict.ac.cn",
-    description="Template for Neural Network models",
+    description="Rich Event Representation for Script Event Prediction",
     # Requirements
     packages=find_packages(),
     install_requires=_process_requirements(),

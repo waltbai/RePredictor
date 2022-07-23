@@ -9,12 +9,6 @@ __all__ = ["BasicPreprocessor"]
 class BasicPreprocessor(ABC):
     """Basic preprocessor.
 
-    In many cases, same type of models share the same preprocess
-    steps (only with a few differences). Therefore, they can inherit
-    the same preprocessor to reduce redundant codes. Since different
-    task requires different preprocess steps, the common preprocess
-    steps can be defined according to your own task.
-
     Notice: same to BasicPredictor, in ``__init__`` method of subclasses,
     ``super`` method should be called IN THE LAST.
     """
