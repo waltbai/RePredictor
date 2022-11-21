@@ -1,8 +1,9 @@
 """Common functions."""
+from typing import Dict
 
 
 def lookup(word: str,
-           dictionary: dict[str, int],
+           dictionary: Dict[str, int],
            default: str = "None") -> int:
     """Look up word in the dictionary for index.
 
@@ -17,14 +18,16 @@ def lookup(word: str,
     return dictionary[word] if word in dictionary else dictionary[default]
 
 
-def get_value(config: dict, key: str):
+def get_value(config: dict, key: str, default=None):
     """Get value from configuration.
 
     Args:
         config (dict): configuration.
         key (str): key.
+        default: default value.
+            Defaults to None.
     """
     if key in config:
         return config[key]
     else:
-        return None
+        return default

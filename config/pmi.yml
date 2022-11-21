@@ -12,20 +12,20 @@ preprocess:
 
 # Model settings
 model:
-  type: scpredictor
-  name: scpredictor
-  lr: 1.0e-3
-  weight_decay: 1.0e-5
+  type: pmi
+  name: pmi
+  # Though listed, these args are not used in pmi
+  lr: 1.0e-2
+  weight_decay: 1.0e-3
   npoch: 20
   batch_size: 1000
   interval: 50
   vocab_size: 51952
   embedding_dim: 300
-  event_dim: 128
+  event_dim: 300
   seq_len: 8
   dropout: 0.1
-  num_layers: 2
-  num_heads: 16
-  dim_feedforward: 1024
-  score_func: euclidean
-  attention_func: scaled-dot
+  # Args used in pmi
+  ordered: False
+  event_threshold: 20
+  pair_threshold: 20

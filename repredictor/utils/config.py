@@ -5,12 +5,12 @@ import yaml
 __all__ = ["load_config", "save_config"]
 
 
-def load_config(config_path="config/default.yml"):
+def load_config(config_path="config/scpredictor.yml"):
     """Load configuration from file.
 
     Args:
         config_path (str, optional): config file path.
-            Defaults to "config/default.yml".
+            Defaults to "config/scpredictor.yml".
 
     Returns:
         dict: configuration object

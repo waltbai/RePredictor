@@ -1,29 +1,33 @@
-"""SCPredictor."""
+"""Event comp predictor."""
 import logging
 import os
+import pickle
+import random
 
 import torch
 from torch import nn
 from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiplicativeLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from repredictor.data import BasicDataset
 from repredictor.predictor.base.basic_predictor import BasicPredictor
-from repredictor.predictor.scpredictor.network import SCPredictorNetwork
-from repredictor.predictor.scpredictor.preprocessor import ScpredictorPreprocessor
+from repredictor.predictor.event_comp.network import EventCompNetwork
 
 
-class SCDataset(BasicDataset):
-    """Dataset for SCPredictor."""
+class ECDataset(BasicDataset):
+    """Dataset for EventComp."""
 
-    def __init__(self, data):
-        """Construction method for BasicDataset.
+    def __init__(self, data, mode: str = "pair"):
+        """Construction method for ECDataset.
 
         Args:
             data: data
+            mode: whether to use "pair" mode or "chain" mode.
         """
-        super(SCDataset, self).__init__(data)
+        self._mode = mode
+        super(ECDataset, self).__init__(data)
 
     def __getitem__(self, idx: int):
         """Get input and output.
@@ -32,14 +36,36 @@ class SCDataset(BasicDataset):
             idx (int): index of the sample.
 
         Returns:
-            Any: input.
-            Any: output.
+
         """
-        context, choices, target = tuple(map(torch.tensor, self._data[idx]))
-        return context, choices, target
+        if self._mode == "chain":
+            context, choices, target = tuple(map(torch.tensor, self._data[idx]))
+            return context, choices, target
+        else:
+            # Pair mode
+            context, choices, target = self._data[idx]
+            e_c = random.choice(context)    # context event
+            e_p = choices[target]   # positive event
+            n_idx = [i for i in range(len(choices)) if i != target]
+            e_n = choices[random.choice(n_idx)]     # negative event
+            e_c, e_p, e_n = tuple(map(torch.tensor, (e_c, e_p, e_n)))
+            return e_c, e_p, e_n
+
+    @classmethod
+    def from_file(cls, fp: str, mode: str = "pair"):
+        """Load dataset from file.
+
+        Args:
+            fp (str): file path.
+            mode (str): "pair" or "chain" mode.
+                Defaults to "pair".
+        """
+        with open(fp, "rb") as f:
+            data = pickle.load(f)
+        return cls(data, mode)
 
 
-class SCPredictor(BasicPredictor):
+class EventCompPredictor(BasicPredictor):
     """Chain predictor class."""
 
     def __init__(self, config: dict, device: str = "cpu"):
@@ -50,31 +76,27 @@ class SCPredictor(BasicPredictor):
             device (str, optional): device name.
                 Defaults to "cpu".
         """
-        self._num_layers = config["model"]["num_layers"]
-        self._num_heads = config["model"]["num_heads"]
-        self._dim_feedforward = config["model"]["dim_feedforward"]
-        self._score_func = config["model"]["score_func"]
-        self._attention_func = config["model"]["attention_func"]
-        super(SCPredictor, self).__init__(config, device)
+        self._arg_comp_hidden_dim = config["model"]["arg_comp_hidden_dim"]
+        self._event_comp_hidden_1_dim = config["model"]["event_comp_hidden_1_dim"]
+        self._event_comp_hidden_2_dim = config["model"]["event_comp_hidden_2_dim"]
+        super(EventCompPredictor, self).__init__(config, device)
 
     def build_model(self):
-        """Build scpredictor model."""
-        self._preprocessor = ScpredictorPreprocessor(self._config)
-        self._preprocess_dir = self._preprocessor.preprocess_dir
-        self._logger = logging.getLogger("repredictor.SCPredictor")
+        """Build EventComp model."""
+        # Share the same preprocessor with scpredictor.
+        self._preprocess_dir = os.path.join(
+            self._work_dir, f"scpredictor_data")
+        self._logger = logging.getLogger("repredictor.EventComp")
         if not os.path.exists(self._model_dir):
             os.makedirs(self._model_dir)
-        self._model = SCPredictorNetwork(
+        self._model = EventCompNetwork(
             vocab_size=self._vocab_size,
             embedding_dim=self._embedding_dim,
+            arg_comp_hidden_dim=self._arg_comp_hidden_dim,
             event_dim=self._event_dim,
-            seq_len=self._seq_len,
-            dropout=self._dropout,
-            num_layers=self._num_layers,
-            num_heads=self._num_heads,
-            dim_feedforward=self._dim_feedforward,
-            score_func=self._score_func,
-            attention_func=self._attention_func)
+            event_comp_hidden_1_dim=self._event_comp_hidden_1_dim,
+            event_comp_hidden_2_dim=self._event_comp_hidden_2_dim,
+            dropout=self._dropout)
         self._model.to(self._device)
         lr = self._lr
         weight_decay = self._weight_decay
@@ -110,11 +132,21 @@ class SCPredictor(BasicPredictor):
             train_fp = os.path.join(preprocess_dir, "train_idx")
         if dev_fp is None:
             dev_fp = os.path.join(preprocess_dir, "dev_idx.pkl")
-        dev_set = SCDataset.from_file(dev_fp)
+        dev_set = ECDataset.from_file(dev_fp, "chain")
         # Prepare model and optimizer
         model = self._model
         optimizer = self._optimizer
-        loss_fn = nn.CrossEntropyLoss()
+        # scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda x: 0.8, verbose=True)
+        scheduler = ReduceLROnPlateau(
+            optimizer,
+            mode="max",
+            factor=0.5,
+            patience=1,
+            threshold=1e-4,
+            threshold_mode="abs",
+            min_lr=1e-4,
+            verbose=True)
+        loss_fn = nn.BCELoss()
         # Prepare data and parameters
         device = self._device
         batch_size = self._batch_size
@@ -129,28 +161,31 @@ class SCPredictor(BasicPredictor):
             loss_buffer = []
             for train_fn in os.listdir(train_fp):
                 train_path = os.path.join(train_fp, train_fn)
-                train_set = SCDataset.from_file(train_path)
+                train_set = ECDataset.from_file(train_path, "pair")
                 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
                 batch_num = 0
                 if self._progress_bar:
                     pbar = tqdm(total=len(train_set), ascii=True)
-                for context, choices, target in train_loader:
+                for e_c, e_p, e_n in train_loader:
                     # forward
                     model.train()
-                    context = context.to(device)
-                    choices = choices.to(device)
-                    target = target.to(device)
-                    pred = model(context, choices)
-                    loss = loss_fn(pred, target)
+                    e_c = e_c.to(device)
+                    e_p = e_p.to(device)
+                    e_n = e_n.to(device)
+                    pred_p = model.forward_pair(e_c, e_p)
+                    pred_n = model.forward_pair(e_c, e_n)
+                    target_p = torch.ones(len(e_c), dtype=torch.float, device=device)
+                    target_n = torch.zeros(len(e_c), dtype=torch.float, device=device)
+                    loss = loss_fn(pred_p, target_p) + loss_fn(pred_n, target_n)
                     loss_buffer.append(loss.item())
+                    if pbar is not None:
+                        pbar.update(len(e_c))
+                        pbar.set_description(f"Loss: {loss.item():.4f} "
+                                             f"Best dev: {best_performance:.2%}")
                     # backward
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                    if pbar is not None:
-                        pbar.update(len(target))
-                        pbar.set_description(f"Loss: {loss.item():.4f} "
-                                             f"Best dev: {best_performance:.2%}")
                     # evaluate
                     batch_num += 1
                     if batch_num % interval == 0:
@@ -172,6 +207,8 @@ class SCPredictor(BasicPredictor):
                 verbose=False)
             logger.info(f"Average loss: {sum(loss_buffer) / len(loss_buffer):.4f}")
             logger.info(f"Best accuracy on dev: {best_performance:.2%}")
+            # scheduler.step()
+            scheduler.step(best_performance)
 
     def validate(self,
                  valid_set: BasicDataset = None,
@@ -194,7 +231,7 @@ class SCPredictor(BasicPredictor):
         if valid_set is None:
             if valid_fp is None:
                 valid_fp = os.path.join(self._preprocess_dir, "dev_idx.pkl")
-            valid_set = SCDataset.from_file(valid_fp)
+            valid_set = ECDataset.from_file(valid_fp, "chain")
         predict_label, true_label = self.predict(pred_set=valid_set)
         accuracy = self.evaluate(predict_label, true_label)
         if verbose:
@@ -222,7 +259,7 @@ class SCPredictor(BasicPredictor):
         if test_set is None:
             if test_fp is None:
                 test_fp = os.path.join(self._preprocess_dir, "test_idx.pkl")
-            test_set = SCDataset.from_file(test_fp)
+            test_set = ECDataset.from_file(test_fp, "chain")
         predict_label, true_label = self.predict(pred_set=test_set)
         accuracy = self.evaluate(predict_label, true_label)
         if verbose:
@@ -248,7 +285,7 @@ class SCPredictor(BasicPredictor):
         if pred_set is None:
             if pred_fp is None:
                 pred_fp = os.path.join(preprocess_dir, "test_idx.pkl")
-            pred_set = SCDataset.from_file(pred_fp)
+            pred_set = ECDataset.from_file(pred_fp, "chain")
         # predict
         model = self._model
         model.eval()
@@ -261,51 +298,9 @@ class SCPredictor(BasicPredictor):
                 context = context.to(device)
                 choices = choices.to(device)
                 target = target.to(device)
-                pred = model(context, choices)
+                pred = model.forward_chain(context, choices)
                 predict_label.append(pred.argmax(1).cpu())
                 true_label.append(target.cpu())
         predict_label = torch.cat(predict_label, dim=0)
         true_label = torch.cat(true_label, dim=0)
         return predict_label, true_label
-
-    def analyze(self,
-                pred_set: BasicDataset = None,
-                pred_fp: str = None):
-        """Analyze the results.
-
-        Args:
-            pred_set (dataset, optional): dataset to be predicted.
-                Defaults to None.
-            pred_fp (str, optional): dataset file path.
-                Only used when pred_set is None.
-                Defaults to None.
-        """
-        preprocess_dir = self._preprocess_dir
-        if pred_set is None:
-            if pred_fp is None:
-                pred_fp = os.path.join(preprocess_dir, "dev_idx.pkl")
-            pred_set = SCDataset.from_file(pred_fp)
-        # predict
-        model = self._model
-        model.eval()
-        device = self._device
-        batch_size = self._batch_size
-        pred_loader = DataLoader(pred_set, batch_size=batch_size)
-        predict_label, true_label = [], []
-        with torch.no_grad():
-            for context, choices, target in pred_loader:
-                context = context.to(device)
-                choices = choices.to(device)
-                target = target.to(device)
-                pred = model(context, choices)
-                predict_label.append(pred.argmax(1).cpu())
-                true_label.append(target.cpu())
-        predict_label = torch.cat(predict_label, dim=0)
-        true_label = torch.cat(true_label, dim=0)
-        results = {
-            "predict_label": predict_label.numpy(),
-            "true_label": true_label.numpy(),
-            "accuracy": self.evaluate(predict_label, true_label)
-        }
-        self.save_results(results)
-        return results

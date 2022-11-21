@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 
 from collections import Counter
 from copy import deepcopy
+from typing import List, Tuple
 
 from tqdm import tqdm
 
@@ -21,8 +22,8 @@ __all__ = ["BasicPreprocessor"]
 
 def _sample_chain_from_doc(doc: Document,
                            min_len: int = None,
-                           stoplist: list[tuple[str, str]] = None
-                           ) -> tuple[Entity or None, list[Event]]:
+                           stoplist: List[Tuple[str, str]] = None
+                           ) -> Tuple[Entity or None, List[Event]]:
     """Sample an event chain from the document.
 
     Args:
@@ -44,9 +45,9 @@ def _sample_chain_from_doc(doc: Document,
         return random.choice(chains)
 
 
-def _generate_distractor_event(neg_pool: list[Event],
+def _generate_distractor_event(neg_pool: List[Event],
                                entity: Entity,
-                               non_protagonist_entities: list[Entity]
+                               non_protagonist_entities: List[Entity]
                                ) -> Event:
     """Generate a distractor event from a random negative event.
 
@@ -225,7 +226,7 @@ class BasicPreprocessor(ABC):
             self._logger.info(f"Generating dictionaries for {train_dir} ...")
             pbar = None
             if self._progress_bar:
-                pbar = tqdm(total=len(fn_list))
+                pbar = tqdm(total=len(fn_list), ascii=True)
                 pbar.set_description("Processed documents")
             for fn in fn_list:
                 fp = os.path.join(train_dir, fn)
@@ -295,7 +296,7 @@ class BasicPreprocessor(ABC):
             neg_pool = []
             fn_list = os.listdir(dataset_dir)
             self._logger.info(f"Generating negative events for {dataset_dir} ...")
-            with tqdm(total=num_events) as pbar:
+            with tqdm(total=num_events, ascii=True) as pbar:
                 pbar.set_description("Sampling events")
                 while len(neg_pool) < num_events:
                     # For each time, we sample a document,
@@ -319,8 +320,8 @@ class BasicPreprocessor(ABC):
     @abstractmethod
     def generate_a_question(self,
                             entity: Entity,
-                            context: list[Event],
-                            choices: list[Event],
+                            context: List[Event],
+                            choices: List[Event],
                             target: int,
                             doc: Document):
         """Generate an input question.
@@ -359,7 +360,7 @@ class BasicPreprocessor(ABC):
             num_questions = num_questions or len(fn_list)
             fn_list = fn_list[:num_questions]
             self._logger.info(f"Generating question set from {eval_dir} ...")
-            with tqdm(total=len(fn_list)) as pbar:
+            with tqdm(total=len(fn_list), ascii=True) as pbar:
                 pbar.set_description("Processed questions")
                 for fn in fn_list:
                     fp = os.path.join(eval_dir, fn)
@@ -424,7 +425,7 @@ class BasicPreprocessor(ABC):
             questions = []
             fn_list = os.listdir(train_dir)
             total_questions = 0
-            with tqdm(total=len(fn_list)) as pbar:
+            with tqdm(total=len(fn_list), ascii=True) as pbar:
                 pbar.set_description("Processed documents")
                 for fn in fn_list:
                     if num_questions is not None and total_questions >= num_questions:

@@ -4,6 +4,7 @@ import logging
 import os
 import pickle
 from collections import Counter
+from typing import Tuple, List
 
 from tqdm import tqdm
 
@@ -14,9 +15,9 @@ from repredictor.utils.event import Event
 from repredictor.utils.functional import lookup
 
 
-def _indexing_event(event: tuple[str, str, str, str],
+def _indexing_event(event: Tuple[str, str, str, str],
                     word_dict: dict,
-                    role_dict: dict) -> tuple[int, int, int, int]:
+                    role_dict: dict) -> Tuple[int, int, int, int]:
     """Indexing an event.
 
     Args:
@@ -82,7 +83,7 @@ class ScpredictorPreprocessor(BasicPreprocessor):
             fn_list = os.listdir(train_dir)
             word_counter = Counter()
             self._logger.info(f"Generating dictionaries for {train_dir} ...")
-            with tqdm(total=len(fn_list)) as pbar:
+            with tqdm(total=len(fn_list), ascii=True) as pbar:
                 pbar.set_description("Processed documents")
                 for fn in fn_list:
                     fp = os.path.join(train_dir, fn)
@@ -117,8 +118,8 @@ class ScpredictorPreprocessor(BasicPreprocessor):
 
     def generate_a_question(self,
                             entity: Entity,
-                            context: list[Event],
-                            choices: list[Event],
+                            context: List[Event],
+                            choices: List[Event],
                             target: int,
                             doc: Document):
         """Generate an input question.

@@ -1,6 +1,7 @@
 """Basic predictor."""
 
 import os
+import pickle
 from abc import ABC, abstractmethod
 
 import torch
@@ -8,7 +9,7 @@ import torch
 from repredictor.data import BasicDataset
 from repredictor.utils.config import load_config, save_config
 
-__all__ =["BasicPredictor"]
+__all__ = ["BasicPredictor"]
 
 
 class BasicPredictor(ABC):
@@ -46,6 +47,7 @@ class BasicPredictor(ABC):
         else:
             base_model_dir = os.path.join(self._work_dir, "models")
         self._model_dir = os.path.join(base_model_dir, self._model_name)
+        self._result_dir = os.path.join(self._work_dir, "results", self._model_name)
         # Set device for the model
         self._device = device
         # ===== Common hyper-parameters =====
@@ -68,6 +70,7 @@ class BasicPredictor(ABC):
         self._logger = None
         # The preprocessor
         self._preprocessor = None
+        self._preprocess_dir = None
         # Build model
         self.build_model()
 
@@ -178,6 +181,28 @@ class BasicPredictor(ABC):
         accuracy = hit / tot
         return accuracy
 
+    def compare_and_update(self,
+                           cur_perf: float,
+                           best_perf: float,
+                           verbose: bool = True) -> float:
+        """Compare current performance with the best performance and update.
+
+        Args:
+            cur_perf (float): current performance
+            best_perf (float): the best performance
+            verbose (bool): whether to print in logger.
+
+        Returns:
+            float: new best performance.
+        """
+        if cur_perf > best_perf:
+            best_perf = cur_perf
+            self.save_checkpoint("best", verbose=False)
+            if verbose:
+                self._logger.info(
+                    f"Accuracy on dev: {best_perf:.2%}")
+        return best_perf
+
     @classmethod
     def from_checkpoint(cls,
                         checkpoint_dir: str,
@@ -251,7 +276,7 @@ class BasicPredictor(ABC):
             if verbose:
                 self._logger.info(f"Save model parameters to {path}.")
         # Defaults save to cpu device
-        torch.save(self._model.cpu().state_dict(), path)
+        torch.save(self._model.state_dict(), path)
 
     def load_model_params(self,
                           path: str,
@@ -312,6 +337,19 @@ class BasicPredictor(ABC):
                 self._logger.info(f"Load optimizer parameters from {path}.")
             optimizer_params = torch.load(path, map_location=self._device)
             self._optimizer.load_state_dict(optimizer_params)
+
+    def save_results(self, results: dict):
+        """Save results.
+
+        Args:
+            results (dict): all necessary results in a dict.
+        """
+        if not os.path.exists(self._result_dir):
+            os.makedirs(self._result_dir)
+        fp = os.path.join(self._result_dir, "results.pkl")
+        with open(fp, "wb") as f:
+            pickle.dump(results, f)
+        self._logger.info(f"Save results to {fp}.")
 
     def to(self, device: str):
         """Switch model to a new device.

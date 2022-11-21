@@ -4,6 +4,7 @@ import logging
 import os
 import pickle
 from functools import partial
+from typing import Tuple, Dict, List
 
 from repredictor.predictor.base.basic_preprocessor import BasicPreprocessor
 from repredictor.utils.document import Document
@@ -12,11 +13,11 @@ from repredictor.utils.event import Event
 from repredictor.utils.functional import lookup
 
 
-def _indexing_event(event: tuple[str, str, list[str], list[str], list[str]],
-                    word_dict: dict[str, int],
-                    role_dict: dict[str, int],
-                    concept_dict: dict[str, int]
-                    ) -> tuple[int, int, list[int], list[int], list[int]]:
+def _indexing_event(event: Tuple[str, str, List[str], List[str], List[str]],
+                    word_dict: Dict[str, int],
+                    role_dict: Dict[str, int],
+                    concept_dict: Dict[str, int]
+                    ) -> Tuple[int, int, List[int], List[int], List[int]]:
     """Indexing an event.
 
     Args:
@@ -54,8 +55,8 @@ class RePredictorPreprocessor(BasicPreprocessor):
 
     def generate_a_question(self,
                             entity: Entity,
-                            context: list[Event],
-                            choices: list[Event],
+                            context: List[Event],
+                            choices: List[Event],
                             target: int,
                             doc: Document):
         """Generate an input question.
@@ -117,6 +118,8 @@ class RePredictorPreprocessor(BasicPreprocessor):
         train_idx_dir = os.path.join(preprocess_dir, "train_idx")
         num_train_questions = 0
         num_args = 0
+        total_args = 0
+        total_events = 0
         for fn in os.listdir(train_idx_dir):
             train_idx_path = os.path.join(train_idx_dir, fn)
             with open(train_idx_path, "rb") as f:
@@ -124,9 +127,12 @@ class RePredictorPreprocessor(BasicPreprocessor):
             for context, choices, target in train_idx:
                 for event in context + choices:
                     num_args = max(num_args, len(event[2]))
+                    total_args += len(event[2])
+                    total_events += 1
             num_train_questions += len(train_idx)
         self._logger.info(f"Totally {num_train_questions} questions in train set.")
         self._logger.info(f"Up to {num_args} args for each event.")
+        self._logger.info(f"Averagely {total_args/total_events:.2f} args for each event.")
         # Count dev question indices
         dev_idx_path = os.path.join(preprocess_dir, "dev_idx.pkl")
         with open(dev_idx_path, "rb") as f:

@@ -6,6 +6,7 @@ from collections import Counter
 
 __all__ = ["Entity", "get_headword_for_mention"]
 
+from typing import List
 
 PRONOUNS = [
     "i", "you", "he", "she", "it", "we", "they",
@@ -21,7 +22,7 @@ with open("data/english_stopwords.txt", "r") as f:
     STOPWORDS = f.read().splitlines()
 
 
-def filter_words_in_mention(words: list[str]):
+def filter_words_in_mention(words: List[str]):
     """Filter stop words and pronouns in mention.
 
     Args:
@@ -33,7 +34,7 @@ def filter_words_in_mention(words: list[str]):
     return [w for w in words if w not in PRONOUNS and w not in STOPWORDS]
 
 
-def get_headword_for_mention(mention: list[str]):
+def get_headword_for_mention(mention: List[str]):
     """Get headword for mention.
 
     Args:
@@ -58,10 +59,10 @@ class Entity:
     """Entity class."""
 
     def __init__(self,
-                 mentions: list[list[str]],
+                 mentions: List[List[str]],
                  ent_id: int,
                  head: str = None,
-                 salient_mention: list[str] = None,
+                 salient_mention: List[str] = None,
                  concept: str = None):
         """Construction method for Entity.
 

@@ -13,7 +13,7 @@ preprocess:
 # Model settings
 model:
   type: repredictor
-  name: rich_fusion
+  name: rich_trans_only_concept
   lr: 1.0e-3
   weight_decay: 1.0e-5
   npoch: 20
@@ -27,13 +27,15 @@ model:
   num_args: 23
   seq_len: 8
   dropout: 0.1
-  hidden_dim_event: 300
+  num_layers_event: 2
+  num_heads_event: 8
+  dim_feedforward_event: 1024
   num_layers_seq: 2
   num_heads_seq: 16
   dim_feedforward_seq: 1024
   rich_event: True
-  use_concept: False
-  concept_only: False
-  event_func: rich-fusion
+  use_concept: True
+  concept_only: True
+  event_func: rich-trans
   score_func: euclidean
   attention_func: scaled-dot

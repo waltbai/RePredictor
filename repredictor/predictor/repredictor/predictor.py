@@ -2,10 +2,13 @@
 import logging
 import os
 import pickle
+from typing import Tuple, List
 
 from torch import nn
 from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiplicativeLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from repredictor.predictor.repredictor.network import REPredictorNetwork
 from repredictor.utils.functional import get_value
@@ -23,7 +26,7 @@ CORE_ROLES = [
 ]
 
 
-def _pad_zero(seq: list[int], seq_len: int) -> list[int]:
+def _pad_zero(seq: List[int], seq_len: int) -> List[int]:
     """Pad zero to sequence.
 
     Args:
@@ -41,15 +44,24 @@ def _pad_zero(seq: list[int], seq_len: int) -> list[int]:
 class REDataset(BasicDataset):
     """Chain model dataset."""
 
-    def __init__(self, data, num_args=25, rich_event=True):
+    def __init__(self, data, num_args: int = 23, rich_event: bool = True):
+        """Construction method for REDataset.
+
+        Args:
+            data: data.
+            num_args (int): max number of arguments.
+                Defaults to 23.
+            rich_event (bool): whether to use non-core arguments.
+                Defaults to True.
+        """
         super(REDataset, self).__init__(data)
         self._data = data
         self._num_args = num_args
         self._rich_event = rich_event
 
     def convert_event(self,
-                      event: tuple[int, int, list[int], list[int], list[int]]
-                      ) -> list[int]:
+                      event: Tuple[int, int, List[int], List[int], List[int]]
+                      ) -> List[int]:
         """Convert event into vector.
 
         Args:
@@ -60,11 +72,12 @@ class REDataset(BasicDataset):
         """
         verb, role, roles, values, concepts = event
         if not self._rich_event:
+            # Filter arguments according to role type
             rest_roles = [(r, v, c) for r, v, c in zip(roles, values, concepts)
                           if r in CORE_ROLES]
             if len(rest_roles) > 0:
-                roles, values, concepts = zip(*rest_roles)
-                roles, values, concepts = list(roles), list(values), list(concepts)
+                # Split fields
+                roles, values, concepts = map(list, zip(*rest_roles))
             else:
                 roles, values, concepts = [], [], []
         roles = _pad_zero(roles, self._num_args)
@@ -81,8 +94,16 @@ class REDataset(BasicDataset):
         return context, choices, target
 
     @classmethod
-    def from_file(cls, fp, num_args=25, rich_event=True):
-        """Load dataset from file."""
+    def from_file(cls, fp: str, num_args: int = 25, rich_event: bool = True):
+        """Load dataset from file.
+
+        Args:
+            fp (str): file path.
+            num_args (int): max number of arguments.
+                Defaults to 25.
+            rich_event (bool): whether to use non-core arguments.
+                Defaults to True.
+        """
         with open(fp, "rb") as f:
             data = pickle.load(f)
         return cls(data, num_args, rich_event)
@@ -101,16 +122,13 @@ class REPredictor(BasicPredictor):
             device (str, optional): device name.
                 Defaults to "cpu".
         """
-        self._logger = logging.getLogger("repredictor.REPredictor")
-        # Preprocess
-        self._preprocessor = RePredictorPreprocessor(config)
-        self._preprocess_dir = self._preprocessor.preprocess_dir
         # Hyper-parameters
         self._role_size = config["model"]["role_size"]
         self._concept_size = config["model"]["concept_size"]
         self._rich_event = config["model"]["rich_event"]
         self._num_args = config["model"]["num_args"]
         self._use_concept = config["model"]["use_concept"]
+        self._concept_only = get_value(config["model"], "concept_only", False)
         self._hidden_dim_event = get_value(config["model"], "hidden_dim_event")
         self._num_layers_event = get_value(config["model"], "num_layers_event")
         self._num_heads_event = get_value(config["model"], "num_heads_event")
@@ -125,6 +143,10 @@ class REPredictor(BasicPredictor):
 
     def build_model(self):
         """Build repredictor model."""
+        # Preprocess
+        self._preprocessor = RePredictorPreprocessor(self._config)
+        self._preprocess_dir = self._preprocessor.preprocess_dir
+        self._logger = logging.getLogger("repredictor.REPredictor")
         if not os.path.exists(self._model_dir):
             os.makedirs(self._model_dir)
         self._model = REPredictorNetwork(
@@ -147,7 +169,8 @@ class REPredictor(BasicPredictor):
             score_func=self._score_func,
             num_args=self._num_args,
             rich_event=self._rich_event,
-            use_concept=self._use_concept)
+            use_concept=self._use_concept,
+            concept_only=self._concept_only)
         self._model.to(self._device)
         lr = self._lr
         weight_decay = self._weight_decay
@@ -186,7 +209,17 @@ class REPredictor(BasicPredictor):
         dev_set = REDataset.from_file(dev_fp, self._num_args, self._use_concept)
         # Prepare model and optimizer
         model = self._model
+        self._logger.info(f"Model structure:\n{model}")
         optimizer = self._optimizer
+        scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda x: 0.8, verbose=True)
+        # scheduler = ReduceLROnPlateau(
+        #     optimizer,
+        #     mode="max",
+        #     factor=0.5,
+        #     patience=1,
+        #     threshold=1e-4,
+        #     threshold_mode="abs",
+        #     min_lr=1e-5, verbose=True)
         loss_fn = nn.CrossEntropyLoss()
         # Prepare data and parameters
         device = self._device
@@ -194,6 +227,7 @@ class REPredictor(BasicPredictor):
         npoch = self._npoch
         interval = self._interval
         logger = self._logger
+        pbar = None
         # Train
         best_performance = 0.
         for epoch in range(npoch):
@@ -204,6 +238,8 @@ class REPredictor(BasicPredictor):
                 train_set = REDataset.from_file(train_path, self._num_args, self._use_concept)
                 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
                 batch_num = 0
+                if self._progress_bar:
+                    pbar = tqdm(total=len(train_set), ascii=True)
                 for context, choices, target in train_loader:
                     # forward
                     model.train()
@@ -217,30 +253,33 @@ class REPredictor(BasicPredictor):
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
+                    if pbar is not None:
+                        pbar.update(len(target))
+                        pbar.set_description(f"Loss: {loss.item():.4f} "
+                                             f"Best dev: {best_performance:.2%}")
                     # evaluate
                     batch_num += 1
                     if batch_num % interval == 0:
                         cur_performance = self.validate(
                             valid_set=dev_set,
-                            verbose=True)
-                        if cur_performance > best_performance:
-                            self.save_checkpoint("best", verbose=False)
-                            best_performance = cur_performance
-                            if verbose:
-                                self._logger.info(
-                                    f"Accuracy on dev: {best_performance:.2%}")
-                cur_performance = self.validate(
-                    valid_set=dev_set,
-                    verbose=True)
-                if cur_performance > best_performance:
-                    self.save_checkpoint("best", verbose=False)
-                    best_performance = cur_performance
-                    if verbose:
-                        self._logger.info(
-                            f"Iter: {batch_num}, "
-                            f"Accuracy on dev: {best_performance:.2%}")
+                            verbose=False)
+                        best_performance = self.compare_and_update(
+                            cur_perf=cur_performance,
+                            best_perf=best_performance,
+                            verbose=False)
+                if pbar is not None:
+                    pbar.close()
+            cur_performance = self.validate(
+                valid_set=dev_set,
+                verbose=False)
+            best_performance = self.compare_and_update(
+                cur_perf=cur_performance,
+                best_perf=best_performance,
+                verbose=False)
             logger.info(f"Average loss: {sum(loss_buffer) / len(loss_buffer):.4f}")
             logger.info(f"Best accuracy on dev: {best_performance:.2%}")
+            # scheduler.step()
+            # scheduler.step(best_performance)
 
     def validate(self,
                  valid_set: BasicDataset = None,
@@ -266,6 +305,8 @@ class REPredictor(BasicPredictor):
             valid_set = REDataset.from_file(valid_fp, self._num_args, self._use_concept)
         predict_label, true_label = self.predict(pred_set=valid_set)
         accuracy = self.evaluate(predict_label, true_label)
+        if verbose:
+            self._logger.info(f"Accuracy on dev: {accuracy:.2%}")
         return accuracy
 
     def test(self,
@@ -302,7 +343,7 @@ class REPredictor(BasicPredictor):
         """Predict samples.
 
         Args:
-            pred_set (dataset, optional): dataset to be predict.
+            pred_set (dataset, optional): dataset to be predicted.
                 Defaults to None.
             pred_fp (str, optional): dataset file path.
                 Only used when pred_set is None.
@@ -335,3 +376,53 @@ class REPredictor(BasicPredictor):
         true_label = torch.cat(true_label, dim=0)
         return predict_label, true_label
 
+    def analyze(self,
+                pred_set: BasicDataset = None,
+                pred_fp: str = None):
+        """Analyze the results.
+
+        Args:
+            pred_set (dataset, optional): dataset to be predicted.
+                Defaults to None.
+            pred_fp (str, optional): dataset file path.
+                Only used when pred_set is None.
+                Defaults to None.
+        """
+        preprocess_dir = self._preprocess_dir
+        if pred_set is None:
+            if pred_fp is None:
+                pred_fp = os.path.join(preprocess_dir, "dev_idx.pkl")
+            pred_set = REDataset.from_file(pred_fp, self._num_args, self._use_concept)
+        # predict
+        model = self._model
+        model.eval()
+        device = self._device
+        batch_size = self._batch_size
+        pred_loader = DataLoader(pred_set, batch_size=batch_size)
+        num_args = []
+        attn_matrices = []
+        predict_label, true_label = [], []
+        with torch.no_grad():
+            for context, choices, target in pred_loader:
+                context = context.to(device)
+                choices = choices.to(device)
+                target = target.to(device)
+                pred = model(context, choices)
+                attn = model.get_event_attention_matrix(context)
+                predict_label.append(pred.argmax(1).cpu())
+                true_label.append(target.cpu())
+                attn_matrices.append(attn.cpu())
+                num_args.append(model.get_actual_num_args(context).cpu())
+        predict_label = torch.cat(predict_label, dim=0)
+        true_label = torch.cat(true_label, dim=0)
+        attn = torch.cat(attn_matrices, dim=0)
+        num_args = torch.cat(num_args, dim=0)
+        results = {
+            "predict_label": predict_label.numpy(),
+            "true_label": true_label.numpy(),
+            "attn": attn.numpy(),
+            "num_args": num_args.numpy(),
+            "accuracy": self.evaluate(predict_label, true_label)
+        }
+        self.save_results(results)
+        return results

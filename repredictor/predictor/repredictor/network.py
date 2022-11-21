@@ -2,6 +2,7 @@
 
 from repredictor.network.attention import construct_attention_layer
 from repredictor.network.event_encoder import construct_event_encoder
+from repredictor.network.new_score import TransformerScore
 from repredictor.network.score import construct_score_layer
 from repredictor.network.sequence_model import Transformer
 import torch
@@ -52,7 +53,8 @@ class REPredictorNetwork(nn.Module):
                  score_func: str = "euclidean",
                  num_args: int = 23,
                  rich_event: bool = True,
-                 use_concept: bool = True):
+                 use_concept: bool = True,
+                 concept_only: bool = False):
         """Construction method for REPredictor network.
 
         Args:
@@ -119,7 +121,8 @@ class REPredictorNetwork(nn.Module):
             num_heads=num_heads_event,
             dim_feedforward=dim_feedforward_event,
             num_args=num_args,
-            use_concept=use_concept)
+            use_concept=use_concept,
+            concept_only=concept_only)
         self.sequence_model = Transformer(
             d_model=event_dim,
             seq_len=seq_len+1,
@@ -145,11 +148,11 @@ class REPredictorNetwork(nn.Module):
         """
         num_args = self._num_args
         # Split events
-        verb, role, arg_role, arg_value, concept = \
+        verb, role, arg_role, arg_value, arg_concept = \
             events.split([1, 1, num_args, num_args, num_args], dim=-1)
         # verb, role: size(*, )
-        verb = verb.squeeze()
-        role = role.squeeze()
+        verb = verb.view(verb.size()[:-1])
+        role = role.view(role.size()[:-1])
         # prepare arg mask: size(*, num_args)
         arg_mask = (arg_role + arg_value) == 0
         # embedding
@@ -157,14 +160,14 @@ class REPredictorNetwork(nn.Module):
         role_emb = self.role_embedding(role)
         arg_role_emb = self.role_embedding(arg_role)
         arg_value_emb = self.embedding(arg_value)
-        concept_emb = self.concept_embedding(concept)
+        arg_concept_emb = self.concept_embedding(arg_concept)
         # encode event
         return self.event_encoder(
             verb=verb_emb,
             role=role_emb,
             arg_role=arg_role_emb,
             arg_value=arg_value_emb,
-            concept=concept_emb,
+            concept=arg_concept_emb,
             arg_mask=arg_mask)
 
     def forward(self, context: LongTensor, choices: LongTensor) -> FloatTensor:
@@ -196,3 +199,53 @@ class REPredictorNetwork(nn.Module):
         # score: shape(batch_size, num_choices)
         score = (score * attention).sum(-1)
         return score
+
+    def get_actual_num_args(self, events: LongTensor) -> LongTensor:
+        """Get actual number of arguments.
+
+        Args:
+            events (LongTensor): events, size(*, 2 + 2 * num_args).
+
+        Returns:
+            LongTensor: actual number of args, size(*, 1)
+        """
+        num_args = self._num_args
+        # Split events
+        verb, role, arg_role, arg_value, arg_concept = \
+            events.split([1, 1, num_args, num_args, num_args], dim=-1)
+        valid_args = arg_role != 0
+        arg_count = valid_args.sum(dim=-1)
+        return arg_count
+
+    def get_event_attention_matrix(self, events: LongTensor) -> FloatTensor:
+        """Get event attention matrices.
+
+        Args:
+            events (LongTensor): events, size(*, 2 + 2 * num_args).
+
+        Returns:
+            FloatTensor: encoded events, size(*, event_dim).
+        """
+        num_args = self._num_args
+        # Split events
+        verb, role, arg_role, arg_value, arg_concept = \
+            events.split([1, 1, num_args, num_args, num_args], dim=-1)
+        # verb, role: size(*, )
+        verb = verb.view(verb.size()[:-1])
+        role = role.view(role.size()[:-1])
+        # prepare arg mask: size(*, num_args)
+        arg_mask = (arg_role + arg_value) == 0
+        # embedding
+        verb_emb = self.embedding(verb)
+        role_emb = self.role_embedding(role)
+        arg_role_emb = self.role_embedding(arg_role)
+        arg_value_emb = self.embedding(arg_value)
+        arg_concept_emb = self.concept_embedding(arg_concept)
+        # encode event
+        return self.event_encoder.get_attention_matrices(
+            verb=verb_emb,
+            role=role_emb,
+            arg_role=arg_role_emb,
+            arg_value=arg_value_emb,
+            concept=arg_concept_emb,
+            arg_mask=arg_mask)

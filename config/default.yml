@@ -1,9 +1,0 @@
-# Basic settings
-data_dir: /path/to/data
-work_dir: /path/to/workspace
-progress_bar: True
-
-# Model settings
-model:
-  type: default
-  name: default

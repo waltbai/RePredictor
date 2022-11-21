@@ -1,14 +1,15 @@
 """Document class."""
 import json
 import os
+from typing import Tuple, List
 
 from repredictor.utils.entity import Entity
 from repredictor.utils.event import Event
 
 
-def _between(pos: tuple[int, int],
-             start_pos: tuple[int, int],
-             end_pos: tuple[int, int]) -> bool:
+def _between(pos: Tuple[int, int],
+             start_pos: Tuple[int, int],
+             end_pos: Tuple[int, int]) -> bool:
     """If the position is between the start and the end.
 
     Args:
@@ -29,11 +30,11 @@ class Document:
 
     def __init__(self,
                  doc_id: str,
-                 entities: list[Entity],
-                 events: list[Event],
+                 entities: List[Entity],
+                 events: List[Event],
                  protagonist: Entity = None,
-                 context: list[Event] = None,
-                 choices: list[Event] = None,
+                 context: List[Event] = None,
+                 choices: List[Event] = None,
                  target: int = None):
         """Construction method for Document.
 
@@ -59,7 +60,7 @@ class Document:
         self.protagonist = protagonist
 
     @classmethod
-    def from_file(cls, fpath, tokens: list[str] = None):
+    def from_file(cls, fpath, tokens: List[str] = None):
         """Read document from path.
 
         Args:
@@ -93,8 +94,8 @@ class Document:
 
     def get_chain_by_entity_id(self,
                                entity: Entity,
-                               stoplist: list[tuple[str, str]] = None
-                               ) -> list[Event]:
+                               stoplist: List[Tuple[str, str]] = None
+                               ) -> List[Event]:
         """Get chain by entity id.
 
         Args:
@@ -112,7 +113,7 @@ class Document:
                     if e.contains(entity) and e.predicate_gr(entity) not in stoplist]
 
     def get_chains(self,
-                   stoplist: list[tuple[str, str]] = None):
+                   stoplist: List[Tuple[str, str]] = None):
         """Get entities and chains.
 
         Args:
@@ -126,8 +127,8 @@ class Document:
             yield entity, self.get_chain_by_entity_id(entity, stoplist)
 
     def get_events(self,
-                   start_pos: tuple[int, int] = None,
-                   end_pos: tuple[int, int] = None) -> list[Event]:
+                   start_pos: Tuple[int, int] = None,
+                   end_pos: Tuple[int, int] = None) -> List[Event]:
         """Get events between start and end position.
 
         Args:

@@ -1,0 +1,29 @@
+# Basic settings
+data_dir: /home/guojiafeng/bl/data/new_scripts
+work_dir: /home/guojiafeng/bl/data/resep_data
+pb_dir: /home/guojiafeng/bl/data/propbank-frames
+progress_bar: True
+overwrite: False
+
+# Preprocess settings
+preprocess:
+  min_freq: 10
+  seed: 10000019
+
+# Model settings
+model:
+  type: event-comp
+  name: event_comp
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  npoch: 100
+  batch_size: 1000
+  interval: 50
+  vocab_size: 51952
+  embedding_dim: 300
+  event_dim: 300
+  seq_len: 8
+  dropout: 0.3
+  arg_comp_hidden_dim: 600
+  event_comp_hidden_1_dim: 400
+  event_comp_hidden_2_dim: 200

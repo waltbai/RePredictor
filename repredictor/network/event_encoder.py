@@ -66,7 +66,8 @@ class RichEventFusionEncoder(nn.Module):
                  event_dim: int = 128,
                  hidden_dim: int = 300,
                  dropout: float = 0.,
-                 use_concept: bool = False):
+                 use_concept: bool = False,
+                 concept_only: bool = False):
         """Construction method for rich event fusion encoder.
 
         Args:
@@ -125,6 +126,84 @@ class RichEventFusionEncoder(nn.Module):
         return projections
 
 
+class RichEventFusionEncoderNew(nn.Module):
+    """Rich event fusion encoder."""
+
+    def __init__(self,
+                 embedding_dim: int = 300,
+                 event_dim: int = 128,
+                 dropout: float = 0.,
+                 use_concept: bool = False,
+                 concept_only: bool = False):
+        """Construction method for rich event fusion encoder.
+
+        Args:
+            embedding_dim (int): embedding dimension.
+                Defaults to 300.
+            event_dim (int): event dimension.
+                Defaults to 128.
+            dropout (float): dropout rate.
+                Defaults to 0.
+            use_concept (bool): if entity type is used.
+                Defaults to False.
+        """
+        super(RichEventFusionEncoderNew, self).__init__()
+        self._use_concept = use_concept
+        # map input
+        input_dim = embedding_dim * 3 if use_concept and not concept_only \
+            else embedding_dim * 2
+        self.proj = nn.Linear(input_dim, event_dim)
+        self.activation = nn.Tanh()
+        self.dropout = nn.Dropout(dropout)
+        self._use_concept = use_concept
+        self._concept_only = concept_only
+
+    def forward(self, verb: FloatTensor, role: FloatTensor,
+                arg_role: FloatTensor, arg_value: FloatTensor, concept: FloatTensor,
+                arg_mask: BoolTensor = None):
+        """Compute event representation.
+
+        Args:
+            verb (FloatTensor): verb, shape(*, embedding_dim).
+            role (FloatTensor): protagonist role, shape(*, embedding_dim).
+            arg_role (FloatTensor): arg role, shape(*, num_args, embedding_dim).
+            arg_value (FloatTensor): arg value, shape(*, num_args, embedding_dim).
+            concept (FloatTensor): arg type, shape(*, num_args, embedding_dim).
+            arg_mask (BoolTensor): arg mask, shape(*, num_args).
+                Defaults to None.
+
+        Returns:
+            FloatTensor: event representation, shape(*, event_dim)
+        """
+        # prepare real_mask: shape(*, num_args, 1)
+        real_mask = arg_role.new_ones(arg_mask.size(), dtype=torch.float)
+        real_mask = real_mask.masked_fill(arg_mask, 0.).unsqueeze(len(arg_mask.size()))
+        # calculate arg_repr: shape(*, num_args, hidden_dim)
+        # p_repr: shape(*, event_dim)
+        # arg_repr: shape(*, num_args, event_dim)
+        dims = len(verb.size())
+        if self._use_concept:
+            if self._concept_only:
+                p_repr = self.proj(torch.cat([verb, role], dim=-1))
+                arg_repr = self.proj(torch.cat([arg_role, concept], dim=-1))
+            else:
+                p_repr = self.proj(
+                    torch.cat([verb, role, verb.new_zeros(verb.size())], dim=-1))
+                arg_repr = self.proj(torch.cat([arg_role, arg_value, concept], dim=-1))
+        else:
+            p_repr = self.proj(torch.cat([verb, role], dim=-1))
+            arg_repr = self.proj(torch.cat([arg_role, arg_value], dim=-1))
+        event_repr = p_repr + (arg_repr * real_mask).sum(dim=-2)
+        event_repr = self.dropout(self.activation(event_repr))
+        return event_repr
+
+    def get_attention_matrices(self, verb: FloatTensor, role: FloatTensor,
+                               arg_role: FloatTensor, arg_value: FloatTensor,
+                               concept: FloatTensor, arg_mask: BoolTensor = None):
+        """Get attention matrices."""
+        return None
+
+
 class RichEventTransformerEncoder(nn.Module):
     """Rich event transformer encoder."""
 
@@ -136,7 +215,8 @@ class RichEventTransformerEncoder(nn.Module):
                  num_heads: int = 8,
                  dim_feedforward: int = 512,
                  dropout: float = 0.,
-                 use_concept: bool = False):
+                 use_concept: bool = False,
+                 concept_only: bool = False):
         """Construction method for rich event transformer encoder.
 
         Args:
@@ -161,10 +241,11 @@ class RichEventTransformerEncoder(nn.Module):
         self._num_args = num_args
         self._event_dim = event_dim
         self._use_concept = use_concept
+        self._concept_only = concept_only
         # map input
-        self.pred_proj = nn.Linear(embedding_dim * 2, event_dim)
-        input_dim = embedding_dim * 3 if use_concept else embedding_dim * 2
-        self.arg_proj = nn.Linear(input_dim, event_dim)
+        input_dim = embedding_dim * 3 if use_concept and not concept_only \
+            else embedding_dim * 2
+        self.proj = nn.Linear(input_dim, event_dim)
         # Transformer
         layer = nn.TransformerEncoderLayer(
             d_model=event_dim,
@@ -195,11 +276,18 @@ class RichEventTransformerEncoder(nn.Module):
         """
         # seq: shape(*, num_args+1, event_dim)
         dims = len(verb.size())
-        p_repr = self.pred_proj(torch.cat([verb, role], dim=-1).unsqueeze(dims-1))
         if self._use_concept:
-            arg_repr = self.arg_proj(torch.cat([arg_role, arg_value, concept], dim=-1))
+            if self._concept_only:
+                p_repr = self.proj(torch.cat([verb, role], dim=-1).unsqueeze(dims-1))
+                arg_repr = self.proj(torch.cat([arg_role, concept], dim=-1))
+            else:
+                p_repr = self.proj(
+                    torch.cat([verb, role, verb.new_zeros(verb.size())], dim=-1)
+                ).unsqueeze(dims - 1)
+                arg_repr = self.proj(torch.cat([arg_role, arg_value, concept], dim=-1))
         else:
-            arg_repr = self.arg_proj(torch.cat([arg_role, arg_value], dim=-1))
+            p_repr = self.proj(torch.cat([verb, role], dim=-1).unsqueeze(dims-1))
+            arg_repr = self.proj(torch.cat([arg_role, arg_value], dim=-1))
         seq = torch.cat([p_repr, arg_repr], dim=-2)
         # mask: shape(*, num_args+1)
         size = verb.size()
@@ -207,7 +295,7 @@ class RichEventTransformerEncoder(nn.Module):
             arg_mask.new_zeros(size[:-1] + (1, ), dtype=torch.bool),
             arg_mask,
         ], dim=-1)
-        # hidden: shape(*, num_args+1, evnet_dim)
+        # hidden: shape(*, num_args+1, event_dim)
         hidden = self.transformer(
             seq.view(-1, seq.size(-2), seq.size(-1)),
             src_key_padding_mask=mask.view(-1, mask.size(-1)))
@@ -215,6 +303,47 @@ class RichEventTransformerEncoder(nn.Module):
         # event_repr: shape(*, event_dim)
         event_repr = hidden.select(dim=-2, index=0)
         return event_repr
+
+    def get_attention_matrices(self, verb: FloatTensor, role: FloatTensor,
+                               arg_role: FloatTensor, arg_value: FloatTensor,
+                               concept: FloatTensor, arg_mask: BoolTensor = None):
+        """Get attention matrices."""
+        # seq: shape(*, num_args+1, event_dim)
+        dims = len(verb.size())
+        if self._use_concept:
+            if self._concept_only:
+                p_repr = self.proj(torch.cat([verb, role], dim=-1).unsqueeze(dims - 1))
+                arg_repr = self.proj(torch.cat([arg_role, concept], dim=-1))
+            else:
+                p_repr = self.proj(
+                    torch.cat([verb, role, verb.new_zeros(verb.size())], dim=-1)
+                ).unsqueeze(dims - 1)
+                arg_repr = self.proj(torch.cat([arg_role, arg_value, concept], dim=-1))
+        else:
+            p_repr = self.proj(torch.cat([verb, role], dim=-1).unsqueeze(dims - 1))
+            arg_repr = self.proj(torch.cat([arg_role, arg_value], dim=-1))
+        seq = torch.cat([p_repr, arg_repr], dim=-2)
+        # mask: shape(*, num_args+1)
+        size = verb.size()
+        mask = torch.cat([
+            arg_mask.new_zeros(size[:-1] + (1,), dtype=torch.bool),
+            arg_mask,
+        ], dim=-1)
+        # hidden: shape(*, num_args+1, event_dim)
+        hidden = seq.view(-1, seq.size(-2), seq.size(-1))
+        mask = mask.view(-1, mask.size(-1))
+        attns = []
+        size = seq.size()
+        for layer in self.transformer.layers:
+            _, attn = layer.self_attn(hidden, hidden, hidden,
+                                      key_padding_mask=mask,
+                                      need_weights=True)
+            hidden = layer(hidden, src_key_padding_mask=mask)
+            attn_size = size[:-1] + (size[-2],)
+            attn = attn.view(attn_size)
+            attns.append(attn.unsqueeze(-3))
+        attns = torch.cat(attns, dim=-3)
+        return attns
 
 
 def construct_event_encoder(func_name: str,
@@ -226,7 +355,8 @@ def construct_event_encoder(func_name: str,
                             num_heads: int = 8,
                             dim_feedforward: int = 512,
                             num_args: int = 23,
-                            use_concept: bool = False):
+                            use_concept: bool = False,
+                            concept_only: bool = False):
     """Construct event encoder.
 
     Args:
@@ -250,6 +380,8 @@ def construct_event_encoder(func_name: str,
             Defaults to 23.
         use_concept (bool, optional): whether to use entity type.
             Defaults to False.
+        concept_only (bool, optional): if use concept instead of value.
+            Defaults to False.
     """
     if func_name == "fusion":
         return EventFusionEncoder(
@@ -257,12 +389,19 @@ def construct_event_encoder(func_name: str,
             event_dim=event_dim,
             dropout=dropout)
     elif func_name == "rich-fusion":
-        return RichEventFusionEncoder(
+        # return RichEventFusionEncoder(
+        #     embedding_dim=embedding_dim,
+        #     event_dim=event_dim,
+        #     hidden_dim=hidden_dim,
+        #     dropout=dropout,
+        #     use_concept=use_concept,
+        #     concept_only=concept_only)
+        return RichEventFusionEncoderNew(
             embedding_dim=embedding_dim,
             event_dim=event_dim,
-            hidden_dim=hidden_dim,
             dropout=dropout,
-            use_concept=use_concept)
+            use_concept=use_concept,
+            concept_only=concept_only)
     elif func_name == "rich-trans":
         return RichEventTransformerEncoder(
             embedding_dim=embedding_dim,
@@ -272,6 +411,7 @@ def construct_event_encoder(func_name: str,
             num_heads=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            use_concept=use_concept)
+            use_concept=use_concept,
+            concept_only=concept_only)
     else:
         raise KeyError(f"Unknown event encoder '{func_name}'!")

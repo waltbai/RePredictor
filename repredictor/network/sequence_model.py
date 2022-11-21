@@ -8,6 +8,7 @@ from torch.autograd import Variable
 
 __all__ = [
     "Transformer",
+    "PositionEncoder"
 ]
 
 

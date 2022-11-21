@@ -21,9 +21,13 @@ if __name__ == "__main__":
     model_type = config["model"]["type"]
     if model_type == "scpredictor":
         from repredictor.predictor.scpredictor import Predictor
+    elif model_type == "pmi":
+        from repredictor.predictor.pmi import Predictor
+    elif model_type == "event-comp":
+        from repredictor.predictor.event_comp import Predictor
     elif model_type == "repredictor":
         from repredictor.predictor.repredictor import Predictor
     else:
-        raise "Unknown model type!"
+        raise KeyError(f"Unknown model type '{model_type}'!")
     model = Predictor(config, device=opt.device)
     model.train()

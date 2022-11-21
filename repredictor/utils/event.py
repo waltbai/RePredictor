@@ -1,4 +1,6 @@
 """Event class."""
+from typing import List, Tuple
+
 from repredictor.utils.entity import Entity, get_headword_for_mention
 
 
@@ -7,7 +9,7 @@ class Role:
 
     def __init__(self,
                  role: str,
-                 value: list[str],
+                 value: List[str],
                  concept: str,
                  ent_id: int):
         """Construction method for Role.
@@ -43,12 +45,12 @@ class Role:
 
 
 def find_arg_word(role: Role,
-                  entities: list[Entity]) -> str:
+                  entities: List[Entity]) -> str:
     """Find the headword of the argument.
 
     Args:
         role (Role): the role.
-        entities (list[Entity]): the entity list.
+        entities (List[Entity]): the entity list.
 
     Returns:
         str: the headword of the argument.
@@ -56,14 +58,20 @@ def find_arg_word(role: Role,
     if role.ent_id is not None:
         assert role.ent_id < len(entities), f"\n{role}\n {entities}"
         value = entities[role.ent_id].head
+    elif role.role != ":polarity":
+        value = get_headword_for_mention(role.value)
+    elif isinstance(role.value, str):
+        # value of polarity is "-", which is traditionally seen as stopword
+        value = role.value
     else:
+        # strange cases.
         value = get_headword_for_mention(role.value)
     return value
 
 
-def find_arg(roles: list[Role],
+def find_arg(roles: List[Role],
              relation: str,
-             entities: list[Entity]) -> str:
+             entities: List[Entity]) -> str:
     """Find argument according to its role type.
 
     Args:
@@ -82,7 +90,7 @@ def find_arg(roles: list[Role],
     return value
 
 
-def find_concept(role: Role, entities: list[Entity]) -> str:
+def find_concept(role: Role, entities: List[Entity]) -> str:
     """Find corresponding concept.
 
     Args:
@@ -105,7 +113,7 @@ class Event:
                  pb_frame: str,
                  verb_pos: int,
                  sent_id: int,
-                 roles: list[dict]):
+                 roles: List[dict]):
         """Construction method for Event.
 
         Args:
@@ -133,7 +141,7 @@ class Event:
         return result
 
     @property
-    def position(self) -> tuple[int, int]:
+    def position(self) -> Tuple[int, int]:
         """Tuple position representation.
 
         Returns:
@@ -179,7 +187,7 @@ class Event:
                 return r.role
         return None
 
-    def predicate_gr(self, entity: Entity) -> tuple[str, str]:
+    def predicate_gr(self, entity: Entity) -> Tuple[str, str]:
         """Return (verb, role) tuple.
 
         Args:
@@ -192,7 +200,7 @@ class Event:
 
     def quintuple(self,
                   protagonist: Entity,
-                  entities: list[Entity]) -> tuple[str, str, str, str, str]:
+                  entities: List[Entity]) -> Tuple[str, str, str, str, str]:
         """Return (v, a0, a1, a2, role) quintuple.
 
         Args:
@@ -213,7 +221,7 @@ class Event:
 
     def quadruple(self,
                   protagonist: Entity,
-                  entities: list[Entity]) -> tuple[str, str, str, str]:
+                  entities: List[Entity]) -> Tuple[str, str, str, str]:
         """Return (predicate_gr, a0, a1, a2) quadruple.
 
         Args:
@@ -229,8 +237,8 @@ class Event:
 
     def rich_repr(self,
                   protagonist: Entity,
-                  entities: list[Entity]
-                  ) -> tuple[str, str or None, list[str], list[str], list[str]]:
+                  entities: List[Entity]
+                  ) -> Tuple[str, str or None, List[str], List[str], List[str]]:
         """Return rich event representation, as role-value list.
 
         Args:
@@ -249,7 +257,7 @@ class Event:
         concepts = [find_concept(r, entities) for r in self.roles]
         return verb, role, roles, values, concepts
 
-    def entities(self) -> list[int]:
+    def entities(self) -> List[int]:
         """Return ids of all entities participate in this event.
 
         Returns:
@@ -261,8 +269,11 @@ class Event:
                 ents.add(r.ent_id)
         return sorted(list(ents))
 
-    def arguments(self, entities) -> list[str]:
+    def arguments(self, entities: List[Entity]) -> List[str]:
         """Return argument head words except None.
+
+        Args:
+            entities (List[Entity]): entity list.
 
         Returns:
             list[str]: the argument headword list.
@@ -271,8 +282,11 @@ class Event:
         values = [_ for _ in values if _ != "None"]
         return values
 
-    def words(self, entities) -> list[str]:
+    def words(self, entities: List[Entity]) -> List[str]:
         """Return all words in event.
+
+        Args:
+            entities (List[Entity]): entity list.
 
         Returns:
             list[str]: the word list.
