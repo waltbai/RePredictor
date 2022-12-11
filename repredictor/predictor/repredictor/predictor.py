@@ -44,7 +44,10 @@ def _pad_zero(seq: List[int], seq_len: int) -> List[int]:
 class REDataset(BasicDataset):
     """Chain model dataset."""
 
-    def __init__(self, data, num_args: int = 23, rich_event: bool = True):
+    def __init__(self, data, num_args: int = 23,
+                 rich_event: bool = True,
+                 use_frame: bool = True,
+                 frame2verb: dict = None):
         """Construction method for REDataset.
 
         Args:
@@ -53,11 +56,16 @@ class REDataset(BasicDataset):
                 Defaults to 23.
             rich_event (bool): whether to use non-core arguments.
                 Defaults to True.
+            use_frame (bool): use frame instead of verb.
+                Defaults to True.
+            frame2verb (dict): map frame to verb lemma.
         """
         super(REDataset, self).__init__(data)
         self._data = data
         self._num_args = num_args
         self._rich_event = rich_event
+        self._use_frame = use_frame
+        self.frame2verb = frame2verb
 
     def convert_event(self,
                       event: Tuple[int, int, List[int], List[int], List[int]]
@@ -80,6 +88,11 @@ class REDataset(BasicDataset):
                 roles, values, concepts = map(list, zip(*rest_roles))
             else:
                 roles, values, concepts = [], [], []
+        if not self._use_frame:
+            if verb in self.frame2verb:
+                verb = self.frame2verb[verb]
+            else:
+                verb = 0
         roles = _pad_zero(roles, self._num_args)
         values = _pad_zero(values, self._num_args)
         concepts = _pad_zero(concepts, self._num_args)
@@ -94,7 +107,8 @@ class REDataset(BasicDataset):
         return context, choices, target
 
     @classmethod
-    def from_file(cls, fp: str, num_args: int = 25, rich_event: bool = True):
+    def from_file(cls, fp: str, num_args: int = 25, rich_event: bool = True,
+                  use_frame: bool = True, frame2verb: dict = None):
         """Load dataset from file.
 
         Args:
@@ -103,10 +117,12 @@ class REDataset(BasicDataset):
                 Defaults to 25.
             rich_event (bool): whether to use non-core arguments.
                 Defaults to True.
+            use_frame (bool)
+            frame2verb (dict)
         """
         with open(fp, "rb") as f:
             data = pickle.load(f)
-        return cls(data, num_args, rich_event)
+        return cls(data, num_args, rich_event, use_frame, frame2verb)
 
 
 class REPredictor(BasicPredictor):
@@ -128,6 +144,7 @@ class REPredictor(BasicPredictor):
         self._rich_event = config["model"]["rich_event"]
         self._num_args = config["model"]["num_args"]
         self._use_concept = config["model"]["use_concept"]
+        self._use_frame = get_value(config["model"], "use_frame", True)
         self._concept_only = get_value(config["model"], "concept_only", False)
         self._hidden_dim_event = get_value(config["model"], "hidden_dim_event")
         self._num_layers_event = get_value(config["model"], "num_layers_event")
@@ -139,6 +156,7 @@ class REPredictor(BasicPredictor):
         self._event_func = config["model"]["event_func"]
         self._attention_func = config["model"]["attention_func"]
         self._score_func = config["model"]["score_func"]
+        self.frame2verb = None
         super(REPredictor, self).__init__(config, device)
 
     def build_model(self):
@@ -146,6 +164,7 @@ class REPredictor(BasicPredictor):
         # Preprocess
         self._preprocessor = RePredictorPreprocessor(self._config)
         self._preprocess_dir = self._preprocessor.preprocess_dir
+        self.frame2verb = self._preprocessor.load_frame2verb()
         self._logger = logging.getLogger("repredictor.REPredictor")
         if not os.path.exists(self._model_dir):
             os.makedirs(self._model_dir)
@@ -206,20 +225,14 @@ class REPredictor(BasicPredictor):
             train_fp = os.path.join(preprocess_dir, "train_idx")
         if dev_fp is None:
             dev_fp = os.path.join(preprocess_dir, "dev_idx.pkl")
-        dev_set = REDataset.from_file(dev_fp, self._num_args, self._use_concept)
+        dev_set = REDataset.from_file(
+            dev_fp, self._num_args, self._use_concept,
+            self._use_frame, self.frame2verb)
         # Prepare model and optimizer
         model = self._model
         self._logger.info(f"Model structure:\n{model}")
         optimizer = self._optimizer
         scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda x: 0.8, verbose=True)
-        # scheduler = ReduceLROnPlateau(
-        #     optimizer,
-        #     mode="max",
-        #     factor=0.5,
-        #     patience=1,
-        #     threshold=1e-4,
-        #     threshold_mode="abs",
-        #     min_lr=1e-5, verbose=True)
         loss_fn = nn.CrossEntropyLoss()
         # Prepare data and parameters
         device = self._device
@@ -235,7 +248,8 @@ class REPredictor(BasicPredictor):
             loss_buffer = []
             for train_fn in os.listdir(train_fp):
                 train_path = os.path.join(train_fp, train_fn)
-                train_set = REDataset.from_file(train_path, self._num_args, self._use_concept)
+                train_set = REDataset.from_file(
+                    train_path, self._num_args, self._use_concept, self._use_frame, self.frame2verb)
                 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
                 batch_num = 0
                 if self._progress_bar:
@@ -302,7 +316,8 @@ class REPredictor(BasicPredictor):
         if valid_set is None:
             if valid_fp is None:
                 valid_fp = os.path.join(self._preprocess_dir, "dev_idx.pkl")
-            valid_set = REDataset.from_file(valid_fp, self._num_args, self._use_concept)
+            valid_set = REDataset.from_file(
+                valid_fp, self._num_args, self._use_concept, self._use_frame, self.frame2verb)
         predict_label, true_label = self.predict(pred_set=valid_set)
         accuracy = self.evaluate(predict_label, true_label)
         if verbose:
@@ -330,7 +345,8 @@ class REPredictor(BasicPredictor):
         if test_set is None:
             if test_fp is None:
                 test_fp = os.path.join(self._preprocess_dir, "test_idx.pkl")
-            test_set = REDataset.from_file(test_fp, self._num_args, self._use_concept)
+            test_set = REDataset.from_file(
+                test_fp, self._num_args, self._use_concept, self._use_frame, self.frame2verb)
         predict_label, true_label = self.predict(pred_set=test_set)
         accuracy = self.evaluate(predict_label, true_label)
         if verbose:
@@ -356,7 +372,8 @@ class REPredictor(BasicPredictor):
         if pred_set is None:
             if pred_fp is None:
                 pred_fp = os.path.join(preprocess_dir, "test_idx.pkl")
-            pred_set = REDataset.from_file(pred_fp, self._num_args, self._use_concept)
+            pred_set = REDataset.from_file(
+                pred_fp, self._num_args, self._use_concept, self._use_frame, self.frame2verb)
         # predict
         model = self._model
         model.eval()
@@ -392,7 +409,8 @@ class REPredictor(BasicPredictor):
         if pred_set is None:
             if pred_fp is None:
                 pred_fp = os.path.join(preprocess_dir, "dev_idx.pkl")
-            pred_set = REDataset.from_file(pred_fp, self._num_args, self._use_concept)
+            pred_set = REDataset.from_file(
+                pred_fp, self._num_args, self._use_concept, self._use_frame, self.frame2verb)
         # predict
         model = self._model
         model.eval()

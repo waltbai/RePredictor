@@ -12,8 +12,8 @@ preprocess:
 
 # Model settings
 model:
-  type: repredictor
-  name: core_trans
+  type: repredictor_verb
+  name: core_trans_verb
   lr: 1.0e-3
   weight_decay: 1.0e-5
   npoch: 20

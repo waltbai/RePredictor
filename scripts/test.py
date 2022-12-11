@@ -28,6 +28,8 @@ if __name__ == "__main__":
         from repredictor.predictor.event_comp import Predictor
     elif model_type == "repredictor":
         from repredictor.predictor.repredictor import Predictor
+    elif model_type == "repredictor_verb":
+        from repredictor.predictor.repredictor_verb import Predictor
     else:
         raise KeyError(f"Unknown model type '{model_type}'!")
     checkpoint_dir = os.path.join(

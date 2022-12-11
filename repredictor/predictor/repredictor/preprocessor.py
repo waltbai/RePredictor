@@ -6,6 +6,8 @@ import pickle
 from functools import partial
 from typing import Tuple, Dict, List
 
+import bs4
+
 from repredictor.predictor.base.basic_preprocessor import BasicPreprocessor
 from repredictor.utils.document import Document
 from repredictor.utils.entity import Entity
@@ -52,6 +54,37 @@ class RePredictorPreprocessor(BasicPreprocessor):
         """
         super(RePredictorPreprocessor, self).__init__(config)
         self._logger = logging.getLogger("repredictor.RePredictor.preprocessor")
+
+    def load_frame2verb(self):
+        """Load frame2verb mapping."""
+        self.load_word_dict()
+        pb_dir = self._config["pb_dir"]
+        pb_dir = os.path.join(pb_dir, "frames")
+        xmls = [fn for fn in os.listdir(pb_dir) if fn.endswith(".xml")]
+        frame2verb = {}
+        lemmaid = {}
+        word_dict = self._word_dict
+        for fn in xmls:
+            fp = os.path.join(pb_dir, fn)
+            with open(fp, "r") as f:
+                dom = bs4.BeautifulSoup(f.read(), "lxml")
+            for predicate in dom.findAll("predicate"):
+                lemma = predicate.get("lemma")
+                lemmaid.setdefault(lemma, 0)
+                for roleset in predicate.findAll("roleset"):
+                    frame = roleset.get("id")
+                    frameid = lookup(frame, word_dict)
+                    if frameid != 0:
+                        if lemmaid[lemma] == 0:
+                            lemmaid[lemma] = frameid
+                        else:
+                            lemmaid[lemma] = min(lemmaid[lemma], frameid)
+                    frame2verb.setdefault(frame, lemma)
+        frameid2verbid = {}
+        for frame, lemma in frame2verb.items():
+            frameid = lookup(frame, word_dict)
+            frameid2verbid.setdefault(frameid, lemmaid[lemma])
+        return frameid2verbid
 
     def generate_a_question(self,
                             entity: Entity,

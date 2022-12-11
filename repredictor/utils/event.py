@@ -257,6 +257,33 @@ class Event:
         concepts = [find_concept(r, entities) for r in self.roles]
         return verb, role, roles, values, concepts
 
+    def rich_repr_verb(self,
+                       protagonist: Entity,
+                       entities: List[Entity],
+                       frame2verb: dict,
+                       ) -> Tuple[str, str or None, List[str], List[str], List[str]]:
+        """Return rich event representation, as role-value list.
+
+        Args:
+            protagonist (Entity): the protagonist.
+            entities (list[Entity]): the entity list.
+            frame2verb (dict): frame to verb mapping
+
+        Returns:
+            tuple[str, str or None, list[str], list[str], list[str]]:
+                the event type, the protagonist role and the arguments.
+        """
+        if self.pb_frame in frame2verb:
+            verb = frame2verb[self.pb_frame]
+        else:
+            verb = "None"
+        role = self.find_role(protagonist)
+        roles = [r.role for r in self.roles]
+        values = [find_arg_word(r, entities) for r in self.roles]
+        # Add concepts for each role
+        concepts = [find_concept(r, entities) for r in self.roles]
+        return verb, role, roles, values, concepts
+
     def entities(self) -> List[int]:
         """Return ids of all entities participate in this event.
 
