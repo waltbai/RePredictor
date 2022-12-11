@@ -1,14 +1,15 @@
 """Basic predictor."""
 
 import os
+import pickle
 from abc import ABC, abstractmethod
 
 import torch
 
-from package_name.data import BasicDataset
-from package_name.utils.config import load_config, save_config
+from repredictor.data import BasicDataset
+from repredictor.utils.config import load_config, save_config
 
-__all__ =["BasicPredictor"]
+__all__ = ["BasicPredictor"]
 
 
 class BasicPredictor(ABC):
@@ -29,6 +30,7 @@ class BasicPredictor(ABC):
                 Defaults to "cpu".
         """
         self._config = config
+        # ===== Common settings =====
         # Source data directory
         self._data_dir = config["data_dir"]
         # Work directory
@@ -40,13 +42,25 @@ class BasicPredictor(ABC):
         # Model name which should be globally unique
         self._model_name = config["model"]["name"]
         # Set model directory for checkpoints
-        if "model_dir" in config:
-            base_model_dir = config["model_dir"]
+        if "directory" in config["model"]:
+            base_model_dir = config["model"]["directory"]
         else:
             base_model_dir = os.path.join(self._work_dir, "models")
         self._model_dir = os.path.join(base_model_dir, self._model_name)
+        self._result_dir = os.path.join(self._work_dir, "results", self._model_name)
         # Set device for the model
         self._device = device
+        # ===== Common hyper-parameters =====
+        self._lr = config["model"]["lr"]
+        self._weight_decay = config["model"]["weight_decay"]
+        self._npoch = config["model"]["npoch"]
+        self._interval = config["model"]["interval"]
+        self._batch_size = config["model"]["batch_size"]
+        self._vocab_size = config["model"]["vocab_size"]
+        self._seq_len = config["model"]["seq_len"]
+        self._embedding_dim = config["model"]["embedding_dim"]
+        self._event_dim = config["model"]["event_dim"]
+        self._dropout = config["model"]["dropout"]
         # ===== Specified by each predictor =====
         # The neural model
         self._model = None
@@ -54,6 +68,9 @@ class BasicPredictor(ABC):
         self._optimizer = None
         # The logger
         self._logger = None
+        # The preprocessor
+        self._preprocessor = None
+        self._preprocess_dir = None
         # Build model
         self.build_model()
 
@@ -68,6 +85,8 @@ class BasicPredictor(ABC):
     def train(self,
               train_set: BasicDataset = None,
               train_fp: str = None,
+              dev_set: BasicDataset = None,
+              dev_fp: str = None,
               verbose: bool = True) -> None:
         """Train the model on train set.
 
@@ -80,6 +99,10 @@ class BasicPredictor(ABC):
                 In many cases, train set is too large to fully load into memory.
                 Then, this argument should be a directory.
                 Only used when train_set is None.
+                Defaults to None.
+            dev_set (BasicDataset, optional): dev set.
+                Defaults to None.
+            dev_fp (str, optional): dev file path.
                 Defaults to None.
             verbose (bool): whether to print training details in logger.
                 Defaults to True.
@@ -142,8 +165,8 @@ class BasicPredictor(ABC):
             Any: results.
         """
 
-    @abstractmethod
-    def evaluate(self, pred_label, true_label) -> dict or float:
+    @staticmethod
+    def evaluate(pred_label, true_label) -> float:
         """Evaluate the prediction results.
 
         Args:
@@ -151,8 +174,34 @@ class BasicPredictor(ABC):
             true_label: true labels
 
         Returns:
-            float or dict: performance under evaluation metric.
+            float: performance under evaluation metric.
         """
+        tot = len(true_label)
+        hit = pred_label.eq(true_label).sum().item()
+        accuracy = hit / tot
+        return accuracy
+
+    def compare_and_update(self,
+                           cur_perf: float,
+                           best_perf: float,
+                           verbose: bool = True) -> float:
+        """Compare current performance with the best performance and update.
+
+        Args:
+            cur_perf (float): current performance
+            best_perf (float): the best performance
+            verbose (bool): whether to print in logger.
+
+        Returns:
+            float: new best performance.
+        """
+        if cur_perf > best_perf:
+            best_perf = cur_perf
+            self.save_checkpoint("best", verbose=False)
+            if verbose:
+                self._logger.info(
+                    f"Accuracy on dev: {best_perf:.2%}")
+        return best_perf
 
     @classmethod
     def from_checkpoint(cls,
@@ -227,7 +276,7 @@ class BasicPredictor(ABC):
             if verbose:
                 self._logger.info(f"Save model parameters to {path}.")
         # Defaults save to cpu device
-        torch.save(self._model.cpu().state_dict(), path)
+        torch.save(self._model.state_dict(), path)
 
     def load_model_params(self,
                           path: str,
@@ -289,6 +338,19 @@ class BasicPredictor(ABC):
             optimizer_params = torch.load(path, map_location=self._device)
             self._optimizer.load_state_dict(optimizer_params)
 
+    def save_results(self, results: dict):
+        """Save results.
+
+        Args:
+            results (dict): all necessary results in a dict.
+        """
+        if not os.path.exists(self._result_dir):
+            os.makedirs(self._result_dir)
+        fp = os.path.join(self._result_dir, "results.pkl")
+        with open(fp, "wb") as f:
+            pickle.dump(results, f)
+        self._logger.info(f"Save results to {fp}.")
+
     def to(self, device: str):
         """Switch model to a new device.
 
@@ -307,3 +369,7 @@ class BasicPredictor(ABC):
         if self._optimizer is not None:
             self._optimizer = self._optimizer.to(device)
         return self
+
+    def preprocess(self):
+        """Preprocess."""
+        self._preprocessor.preprocess()

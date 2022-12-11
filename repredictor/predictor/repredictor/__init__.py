@@ -1,0 +1,1 @@
+from repredictor.predictor.repredictor.predictor import REPredictor as Predictor

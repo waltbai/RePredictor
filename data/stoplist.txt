@@ -1,0 +1,10 @@
+say.01	:ARG0
+have.03	:ARG0
+do.02	:ARG0
+think.01	:ARG0
+want.01	:ARG0
+play.01	:ARG0
+win.01	:ARG0
+know.01	:ARG0
+see.01	:ARG0
+work.01	:ARG0

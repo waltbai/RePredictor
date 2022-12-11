@@ -1,0 +1,40 @@
+# Basic settings
+data_dir: /data/users/bl/data/new_scripts
+work_dir: /data/users/bl/data/resep_data
+pb_dir: /data/users/bl/data/propbank-frames
+progress_bar: True
+overwrite: False
+
+# Preprocess settings
+preprocess:
+  min_freq: 10
+  seed: 10000019
+
+# Model settings
+model:
+  type: repredictor
+  name: rich_fusion
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  npoch: 20
+  batch_size: 1000
+  interval: 50
+  vocab_size: 47607
+  role_size: 20
+  concept_size: 10290
+  embedding_dim: 300
+  event_dim: 128
+  num_args: 23
+  seq_len: 8
+  dropout: 0.1
+  hidden_dim_event: 300
+  num_layers_seq: 2
+  num_heads_seq: 16
+  dim_feedforward_seq: 1024
+  rich_event: True
+  use_concept: False
+  use_frame: True
+  concept_only: False
+  event_func: rich-fusion
+  score_func: euclidean
+  attention_func: scaled-dot
