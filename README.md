@@ -13,6 +13,8 @@ Install this package via:
 pip install .
 ```
 
+Code for generating MCNC-rich is not fully prepared yet.
+
 ## Preprocess
 
 ```bash 
